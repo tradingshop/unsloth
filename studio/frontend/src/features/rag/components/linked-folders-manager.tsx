@@ -12,6 +12,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -163,6 +164,12 @@ export function LinkedFoldersManager({
     id: string;
     name: string;
   } | null>(null);
+  const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>([]);
+  const [bulkUnlinkOpen, setBulkUnlinkOpen] = useState(false);
+  const projectCard = variant === "card" && scope?.type === "project";
+  const selectedFolders = manager.folders.filter((folder) =>
+    selectedFolderIds.includes(folder.id),
+  );
 
   function runningJob(folderId: string): FolderSyncJob | undefined {
     const job = manager.jobs[folderId];
@@ -261,6 +268,34 @@ export function LinkedFoldersManager({
     const rowClass = FOLDER_ROW_CLASS;
     return (
       <section className="flex min-w-0 flex-col gap-2">
+        {projectCard && manager.folders.length > 0 ? (
+          <div className="flex items-center justify-between gap-3 px-1">
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Checkbox
+                checked={selectedFolders.length === manager.folders.length}
+                onCheckedChange={(checked) =>
+                  setSelectedFolderIds(
+                    checked === true ? manager.folders.map((folder) => folder.id) : [],
+                  )
+                }
+                aria-label="Select all source folders"
+                disabled={manager.mutating}
+              />
+              Select all folders
+            </label>
+            {selectedFolders.length > 0 ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={manager.mutating}
+                onClick={() => setBulkUnlinkOpen(true)}
+              >
+                Unlink selected ({selectedFolders.length})
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
         <div className={FOLDER_CARD_CLASS}>
           {manager.loading && manager.folders.length === 0 ? (
             <div className={cn(rowClass, "text-ui-13 text-muted-foreground")}>
@@ -289,6 +324,20 @@ export function LinkedFoldersManager({
                       : `${folder.displayName}: ${folder.documentCount ?? 0} indexed documents`
                   }
                 >
+                  {projectCard ? (
+                    <Checkbox
+                      checked={selectedFolderIds.includes(folder.id)}
+                      onCheckedChange={(checked) =>
+                        setSelectedFolderIds((current) =>
+                          checked === true
+                            ? [...current, folder.id]
+                            : current.filter((id) => id !== folder.id),
+                        )
+                      }
+                      aria-label={`Select ${folder.displayName}`}
+                      disabled={manager.mutating}
+                    />
+                  ) : null}
                   <HugeiconsIcon
                     icon={FolderSyncIcon}
                     strokeWidth={1.75}
@@ -357,6 +406,34 @@ export function LinkedFoldersManager({
             </button>
           ) : null}
         </div>
+        <AlertDialog
+          open={bulkUnlinkOpen}
+          onOpenChange={setBulkUnlinkOpen}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Unlink selected source folders?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {selectedFolders.length} selected folder{selectedFolders.length === 1 ? "" : "s"} will be removed from this project.
+                Their indexed documents will be kept, and files on disk will not change.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={manager.mutating}
+                onClick={() => {
+                  const ids = selectedFolders.map((folder) => folder.id);
+                  setBulkUnlinkOpen(false);
+                  setSelectedFolderIds([]);
+                  void manager.removeMany(ids);
+                }}
+              >
+                Unlink folders
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         {!manager.desktopSupported ? (
           <p className="px-1 text-ui-11 text-muted-foreground">
             {sourceFolderUnavailableMessage(isTauri)} Existing source folders
