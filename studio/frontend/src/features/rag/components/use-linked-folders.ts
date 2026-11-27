@@ -447,6 +447,9 @@ export function useLinkedFolders(
           }
         }
 
+        if (unlinkedAny && unlinkedProjectId) {
+          announceProjectSourcesUpdated(unlinkedProjectId);
+        }
         if (currentScopeKey.current !== operationScopeKey) return;
         if (failedFolders.length > 0) {
           setFolders((current) => {
@@ -466,10 +469,7 @@ export function useLinkedFolders(
             description: `${failedFolders.length} of ${selectedFolders.length} folders could not be unlinked.`,
           });
         }
-        if (unlinkedAny) {
-          if (unlinkedProjectId) announceProjectSourcesUpdated(unlinkedProjectId);
-          onSourcesChanged?.();
-        }
+        if (unlinkedAny) onSourcesChanged?.();
       } finally {
         setMutating(false);
       }
