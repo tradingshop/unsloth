@@ -407,6 +407,84 @@ export function useLinkedFolders(
     ],
   );
 
+  const removeMany = useCallback(
+    async (folderIds: string[]) => {
+      const selectedIds = new Set(folderIds);
+      const selectedFolders = folders.filter((folder) =>
+        selectedIds.has(folder.id),
+      );
+      if (selectedFolders.length === 0) return;
+
+      const operationScopeKey = scopeKey;
+      const unlinkedProjectId = projectWorkScopeId;
+      setMutating(true);
+      for (const folder of selectedFolders) {
+        const activeJobId =
+          folder.activeJobId ?? jobs[folder.id]?.id;
+        if (activeJobId) {
+          controllers.current.get(activeJobId)?.abort();
+          controllers.current.delete(activeJobId);
+        }
+      }
+      setFolders((current) =>
+        current.filter((folder) => !selectedIds.has(folder.id)),
+      );
+
+      const failedFolders: LinkedFolder[] = [];
+      let unlinkedAny = false;
+      try {
+        for (const folder of selectedFolders) {
+          try {
+            await withProjectWork(() => deleteLinkedFolder(folder.id, false));
+            unlinkedAny = true;
+            setJobs((current) => {
+              const next = { ...current };
+              delete next[folder.id];
+              return next;
+            });
+          } catch {
+            failedFolders.push(folder);
+          }
+        }
+
+        if (currentScopeKey.current !== operationScopeKey) return;
+        if (failedFolders.length > 0) {
+          setFolders((current) => {
+            const merged = new Map(current.map((folder) => [folder.id, folder]));
+            for (const folder of failedFolders) {
+              if (!merged.has(folder.id)) merged.set(folder.id, folder);
+            }
+            return [
+              ...folders
+                .map((folder) => merged.get(folder.id))
+                .filter((folder): folder is LinkedFolder => folder !== undefined),
+              ...current.filter((folder) => !folders.some((prior) => prior.id === folder.id)),
+            ];
+          });
+          void refresh({ quiet: true });
+          toast.error("Could not unlink some folders", {
+            description: `${failedFolders.length} of ${selectedFolders.length} folders could not be unlinked.`,
+          });
+        }
+        if (unlinkedAny) {
+          if (unlinkedProjectId) announceProjectSourcesUpdated(unlinkedProjectId);
+          onSourcesChanged?.();
+        }
+      } finally {
+        setMutating(false);
+      }
+    },
+    [
+      scopeKey,
+      folders,
+      jobs,
+      refresh,
+      withProjectWork,
+      onSourcesChanged,
+      projectWorkScopeId,
+    ],
+  );
+
   return {
     folders: stateScopeKey === scopeKey ? folders : [],
     jobs: stateScopeKey === scopeKey ? jobs : {},
@@ -417,6 +495,7 @@ export function useLinkedFolders(
     sync: (folderId: string) => run(folderId, "sync"),
     rebuild: (folderId: string) => run(folderId, "rebuild"),
     remove,
+    removeMany,
     refresh,
   };
 }
